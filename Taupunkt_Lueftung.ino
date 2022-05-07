@@ -1,32 +1,33 @@
 // Dieser Code benötigt zwingend die folgenden Libraries:
 #include "DHT.h"
-#include <Wire.h> 
+#include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <avr/wdt.h>
 
 #define TAPIN    2 // Taste fuer Hintergrundbl.
 #define RELAIPIN 6 // Anschluss des Lüfter-Relais
-#define DHTPIN_1 5 // Datenleitung für den DHT-Sensor 1 (innen)
-#define DHTPIN_2 4 // Datenleitung für den DHT-Sensor 2 (außen)
+#define DHTPIN_1 7 // Datenleitung für den DHT-Sensor 1 (innen)
+#define DHTPIN_2 8 // Datenleitung für den DHT-Sensor 2 (außen)
 
 #define RELAIS_EIN LOW
 #define RELAIS_AUS HIGH
 bool rel;
 
-#define DHTTYPE_1 DHT22 // DHT 22 
-#define DHTTYPE_2 DHT22 // DHT 22  
+#define DHTTYPE_1 DHT22 // DHT 22
+#define DHTTYPE_2 DHT22 // DHT 22
 
 // *******  Korrekturwerte der einzelnen Sensorwerte  *******
-#define Korrektur_t_1  -3 // Korrekturwert Innensensor Temperatur
-#define Korrektur_t_2  -4 // Korrekturwert Außensensor Temperatur
-#define Korrektur_h_1  0  // Korrekturwert Innensensor Luftfeuchtigkeit
+#define Korrektur_t_1  0 // Korrekturwert Innensensor Temperatur
+#define Korrektur_t_2  0.2 // Korrekturwert Außensensor Temperatur
+#define Korrektur_h_1  1.4  // Korrekturwert Innensensor Luftfeuchtigkeit
 #define Korrektur_h_2  0  // Korrekturwert Außensensor Luftfeuchtigkeit
 //***********************************************************
 
 #define SCHALTmin   5.0 // minimaler Taupunktunterschied, bei dem das Relais schaltet
 #define HYSTERESE   1.0 // Abstand von Ein- und Ausschaltpunkt
-#define TEMP1_min  10.0 // Minimale Innentemperatur, bei der die Lüftung aktiviert wird
+#define TEMP1_min   3.0 // Minimale Innentemperatur, bei der die Lüftung aktiviert wird
 #define TEMP2_min -10.0 // Minimale Außentemperatur, bei der die Lüftung aktiviert wird
+#define HUM_min    61.0 // Mindest Feuchte innen
 
 DHT dht1(DHTPIN_1, DHTTYPE_1); //Der Innensensor wird ab jetzt mit dht1 angesprochen
 DHT dht2(DHTPIN_2, DHTTYPE_2); //Der Außensensor wird ab jetzt mit dht2 angesprochen
@@ -39,25 +40,27 @@ volatile bool backlightToggle = false;
 
 void setup() {
   wdt_enable(WDTO_8S); // Watchdog timer auf 8 Sekunden stellen
-  
+
   pinMode(RELAIPIN, OUTPUT);          // Relaispin als Output definieren
   digitalWrite(RELAIPIN, RELAIS_AUS); // Relais ausschalten
-  
-  Serial.begin(9600);  // Serielle Ausgabe, falls noch kein LCD angeschlossen ist
-  Serial.println(F("Teste Sensoren.."));
+
+  //Serial.begin(9600);  // Serielle Ausgabe, falls noch kein LCD angeschlossen ist
+  //Serial.println(F("Teste Sensoren.."));
 
   lcd.init();
-  lcd.backlight();                      
+  lcd.backlight();
   lcd.setCursor(2,0);
+  lcd.print(F("Vers. 2.0"));
+  lcd.setCursor(2,1);
   lcd.print(F("Teste Sensoren.."));
-  
+
   byte Grad[8] = {B00111,B00101,B00111,B0000,B00000,B00000,B00000,B00000};      // Sonderzeichen ° definieren
   lcd.createChar(0, Grad);
   byte Strich[8] = {B00100,B00100,B00100,B00100,B00100,B00100,B00100,B00100};   // Sonderzeichen senkrechter Strich definieren
   lcd.createChar(1, Strich);
-    
+
   dht1.begin(); // Sensoren starten
-  dht2.begin();   
+  dht2.begin();
   pinMode(TAPIN,INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(TAPIN), isrLCDon, FALLING);
 }
@@ -68,57 +71,57 @@ void loop() {
   float t1 = dht1.readTemperature()+ Korrektur_t_1;   // Innentemperatur auslesen und unter „t1“ speichern
   float h2 = dht2.readHumidity()+Korrektur_h_2;       // Außenluftfeuchtigkeit auslesen und unter „h2“ speichern
   float t2 = dht2.readTemperature()+ Korrektur_t_2;   // Außentemperatur auslesen und unter „t2“ speichern
-  
+
   if (fehler == true)  // Prüfen, ob gültige Werte von den Sensoren kommen
   {
-    fehler = false; 
+    fehler = false;
     if (isnan(h1) || isnan(t1) || h1 > 100 || h1 < 1 || t1 < -40 || t1 > 80 )  {
-      Serial.println(F("Fehler beim Auslesen vom 1. Sensor!"));
-      lcd.setCursor(0,1);
+      // Serial.println(F("Fehler beim Auslesen vom 1. Sensor!"));
+      lcd.setCursor(0,2);
       lcd.print(F("Fehler Sensor 1"));
       fehler = true;
-    }else {
-     lcd.setCursor(0,1);
+    } else {
+     lcd.setCursor(0,2);
      lcd.print(F("Sensor 1 in Ordnung"));
-   }
-  
+    }
+ 
     delay(2000);  // Zeit um das Display zu lesen
-  
-      if (isnan(h2) || isnan(t2) || h2 > 100 || h2 < 1 || t2 < -40 || t2  > 80)  {
-        Serial.println(F("Fehler beim Auslesen vom 2. Sensor!"));
-        lcd.setCursor(0,2);
-        lcd.print(F("Fehler Sensor 2"));
-        fehler = true;
-      } else {
-        lcd.setCursor(0,2);
-        lcd.print(F("Sensor 2 in Ordnung"));
-     }
+ 
+    if (isnan(h2) || isnan(t2) || h2 > 100 || h2 < 1 || t2 < -40 || t2  > 80)  {
+      // Serial.println(F("Fehler beim Auslesen vom 2. Sensor!"));
+      lcd.setCursor(0,3);
+      lcd.print(F("Fehler Sensor 2"));
+      fehler = true;
+    } else {
+      lcd.setCursor(0,3);
+      lcd.print(F("Sensor 2 in Ordnung"));
+    }
 
     delay(2000);  // Zeit um das Display zu lesen
   }
   if (isnan(h1) || isnan(t1) || isnan(h2) || isnan(t2)) fehler = true;
-   
- if (fehler == true) {
-    digitalWrite(RELAIPIN, RELAIS_AUS); // Relais ausschalten 
+
+  if (fehler == true) {
+    digitalWrite(RELAIPIN, RELAIS_AUS); // Relais ausschalten
     lcd.setCursor(0,3);
     lcd.print(F("CPU Neustart....."));
     while (1);  // Endlosschleife um das Display zu lesen und die CPU durch den Watchdog neu zu starten
- }
- wdt_reset();  // Watchdog zurücksetzen
- if (backlightTimeout <= 0) {
+  }
+  wdt_reset();  // Watchdog zurücksetzen
+  if (backlightTimeout <= 0) {
     lcd.noBacklight();
- } else {
+  } else {
     --backlightTimeout;
- }
+  }
 
 //**** Taupunkte errechnen********
 float Taupunkt_1 = taupunkt(t1, h1);
 float Taupunkt_2 = taupunkt(t2, h2);
 
 // Werteausgabe auf Serial Monitor
- Serial.print(F("Sensor-1: " ));
+/* Serial.print(F("Sensor-1: " ));
   Serial.print(F("Luftfeuchtigkeit: "));
-  Serial.print(h1);                     
+  Serial.print(h1);
   Serial.print(F("%  Temperatur: "));
   Serial.print(t1);
   Serial.print(F("°C  "));
@@ -137,13 +140,13 @@ float Taupunkt_2 = taupunkt(t2, h2);
   Serial.println(F("°C  "));
 
 
- Serial.println();
+ Serial.println(); */
 
   // Werteausgabe auf dem I2C-Display
   lcd.clear();
   lcd.setCursor(0,0);
   lcd.print(F("S1: "));
-  lcd.print(t1); 
+  lcd.print(t1);
   lcd.write((uint8_t)0); // Sonderzeichen °C
   lcd.write(('C'));
   lcd.write((uint8_t)1); // Sonderzeichen |
@@ -152,7 +155,7 @@ float Taupunkt_2 = taupunkt(t2, h2);
 
   lcd.setCursor(0,1);
   lcd.print(F("S2: "));
-  lcd.print(t2); 
+  lcd.print(t2);
   lcd.write((uint8_t)0); // Sonderzeichen °C
   lcd.write(('C'));
   lcd.write((uint8_t)1); // Sonderzeichen |
@@ -161,13 +164,13 @@ float Taupunkt_2 = taupunkt(t2, h2);
 
   lcd.setCursor(0,2);
   lcd.print(F("Taupunkt 1: "));
-  lcd.print(Taupunkt_1); 
+  lcd.print(Taupunkt_1);
   lcd.write((uint8_t)0); // Sonderzeichen °C
   lcd.write(('C'));
 
   lcd.setCursor(0,3);
   lcd.print(F("Taupunkt 2: "));
-  lcd.print(Taupunkt_2); 
+  lcd.print(Taupunkt_2);
   lcd.write((uint8_t)0); // Sonderzeichen °C
   lcd.write(('C'));
 
@@ -190,12 +193,13 @@ if (DeltaTP > (SCHALTmin + HYSTERESE))rel = true;
 if (DeltaTP < (SCHALTmin))rel = false;
 if (t1 < TEMP1_min )rel = false;
 if (t2 < TEMP2_min )rel = false;
+if (h1 < HUM_min)rel = false;
 
 if (rel == true)
 {
   digitalWrite(RELAIPIN, RELAIS_EIN); // Relais einschalten
-  lcd.print(F("Lueftung AN"));  
-} else {                             
+  lcd.print(F("Lueftung AN"));
+} else {
   digitalWrite(RELAIPIN, RELAIS_AUS); // Relais ausschalten
   lcd.print(F("Lueftung AUS"));
 }
@@ -214,7 +218,7 @@ if (rel == true)
     }
     delay(100);
  }
- wdt_reset();   // Watchdog zurücksetzen 
+ wdt_reset();   // Watchdog zurücksetzen
  
 }
 
@@ -241,13 +245,13 @@ float a, b;
   
   // Taupunkttemperatur (°C)
   float tt = (b*v) / (a-v);
-  return { tt };  
+  return { tt };
 }
 
 
- void software_Reset() // Startet das Programm neu, nicht aber die Sensoren oder das LCD 
+ void software_Reset() // Startet das Programm neu, nicht aber die Sensoren oder das LCD
   {
-    asm volatile ("  jmp 0");  
+    asm volatile ("  jmp 0");
   }
 
 void isrLCDon() {
@@ -257,3 +261,4 @@ void isrLCDon() {
     delayMicroseconds(500);
   }
 }
+
